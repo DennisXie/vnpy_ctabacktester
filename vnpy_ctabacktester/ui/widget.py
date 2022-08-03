@@ -19,6 +19,8 @@ from vnpy.trader.object import BarData, TradeData, OrderData
 from vnpy.trader.database import DB_TZ
 from vnpy_ctastrategy.backtesting import DailyResult
 
+from .indicator_widget import IndicatorWidget, CurveItem
+
 from ..engine import (
     APP_NAME,
     EVENT_BACKTESTER_LOG,
@@ -129,6 +131,10 @@ class BacktesterManager(QtWidgets.QWidget):
         self.candle_button.clicked.connect(self.show_candle_chart)
         self.candle_button.setEnabled(False)
 
+        self.indicator_button: QtWidgets.QPushButton = QtWidgets.QPushButton("指标K线图")
+        self.indicator_button.clicked.connect(self.show_indicator_chart)
+        self.indicator_button.setEnabled(False)
+
         edit_button: QtWidgets.QPushButton = QtWidgets.QPushButton("代码编辑")
         edit_button.clicked.connect(self.edit_strategy_code)
 
@@ -144,6 +150,7 @@ class BacktesterManager(QtWidgets.QWidget):
             self.trade_button,
             self.daily_button,
             self.candle_button,
+            self.indicator_button,
             edit_button,
             reload_button
         ]:
@@ -166,6 +173,7 @@ class BacktesterManager(QtWidgets.QWidget):
         result_grid.addWidget(self.order_button, 0, 1)
         result_grid.addWidget(self.daily_button, 1, 0)
         result_grid.addWidget(self.candle_button, 1, 1)
+        result_grid.addWidget(self.indicator_button, 2, 0)
 
         left_vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         left_vbox.addLayout(form)
@@ -302,6 +310,7 @@ class BacktesterManager(QtWidgets.QWidget):
         interval: str = self.interval_combo.currentText()
         if interval != Interval.TICK.value:
             self.candle_button.setEnabled(True)
+            self.indicator_button.setEnabled(True)
 
     def process_optimization_finished_event(self, event: Event) -> None:
         """"""
@@ -500,7 +509,14 @@ class BacktesterManager(QtWidgets.QWidget):
             trades: List[TradeData] = self.backtester_engine.get_all_trades()
             self.candle_dialog.update_trades(trades)
 
+            # TODO: delete this code
+            self.candle_dialog.update_indicator()
+
         self.candle_dialog.exec_()
+
+    def show_indicator_chart(self) -> None:
+        self.backtester_engine.e
+        pass
 
     def edit_strategy_code(self) -> None:
         """"""
@@ -1200,8 +1216,10 @@ class CandleChartDialog(QtWidgets.QDialog):
         self.chart: ChartWidget = ChartWidget()
         self.chart.add_plot("candle", hide_x_axis=True)
         self.chart.add_plot("volume", maximum_height=200)
+        self.chart.add_plot("indicator")
         self.chart.add_item(CandleItem, "candle", "candle")
         self.chart.add_item(VolumeItem, "volume", "volume")
+        self.chart.add_item(VolumeItem, "indicator", "indicator")
         self.chart.add_cursor()
 
         # Create help widget
@@ -1275,6 +1293,16 @@ class CandleChartDialog(QtWidgets.QDialog):
                 self.low_price = min(self.low_price, bar.low_price)
 
         self.price_range = self.high_price - self.low_price
+
+    def update_indicator(self) -> None:
+        import random
+        indicator_plot: pg.PlotItem = self.chart.get_plot("indicator")
+        x = list(self.dt_ix_map.values())
+        x.sort()
+        y = [random.randint(0, 500) for _ in x]
+        pen: QtGui.QPen = pg.mkPen("g", width=1.5, style=QtCore.Qt.SolidLine)
+        item: pg.PlotCurveItem = pg.PlotCurveItem(x, y, pen=pen)
+        indicator_plot.addItem(item)
 
     def update_trades(self, trades: list) -> None:
         """"""
@@ -1431,3 +1459,155 @@ def generate_trade_pairs(trades: list) -> list:
             same_direction.append(trade)
 
     return trade_pairs
+
+
+class IndicatorChartDialog(QtWidgets.QDialog):
+
+    def __init__(self) -> None:
+        super(IndicatorChartDialog, self).__init__()
+
+        self.updated: bool = False
+        self.dt_ix_map: dict = {}
+        self.ix_bar_map: dict = {}
+
+        self.high_price = 0
+        self.low_price = 0
+        self.price_range = 0
+
+        self.items: list = []
+
+        self.init_ui()
+
+    def init_ui(self) -> None:
+        self.setWindowTitle("指标K线图")
+        self.resize(1400, 800)
+
+        self.chart: ChartWidget = IndicatorWidget()
+        self.chart.add_plot("candle", hide_x_axis=True)
+        self.chart.add_plot("volume", hide_x_axis=True, maximum_height=200)
+        self.chart.add_plot("indicator", maximum_height=300)
+        self.chart.add_item(CandleItem, "candle", "candle")
+        self.chart.add_item(VolumeItem, "volume", "volume")
+        self.chart.add_cursor()
+
+        vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        vbox.addWidget(self.chart)
+        self.setLayout(vbox)
+
+    def update_indicator(self) -> None:
+        pass
+
+    def update_history(self, history: list) -> None:
+        """"""
+        self.updated = True
+        self.chart.update_history(history)
+
+        for ix, bar in enumerate(history):
+            self.ix_bar_map[ix] = bar
+            self.dt_ix_map[bar.datetime] = ix
+
+            if not self.high_price:
+                self.high_price = bar.high_price
+                self.low_price = bar.low_price
+            else:
+                self.high_price = max(self.high_price, bar.high_price)
+                self.low_price = min(self.low_price, bar.low_price)
+
+        self.price_range = self.high_price - self.low_price
+
+    def update_trades(self, trades: list) -> None:
+        """"""
+        trade_pairs: list = generate_trade_pairs(trades)
+
+        candle_plot: pg.PlotItem = self.chart.get_plot("candle")
+
+        scatter_data: list = []
+
+        y_adjustment: float = self.price_range * 0.001
+
+        for d in trade_pairs:
+            open_ix = self.dt_ix_map[d["open_dt"]]
+            close_ix = self.dt_ix_map[d["close_dt"]]
+            open_price = d["open_price"]
+            close_price = d["close_price"]
+
+            # Trade Line
+            x: list = [open_ix, close_ix]
+            y: list = [open_price, close_price]
+
+            if d["direction"] == Direction.LONG and close_price >= open_price:
+                color: str = "r"
+            elif d["direction"] == Direction.SHORT and close_price <= open_price:
+                color: str = "r"
+            else:
+                color: str = "g"
+
+            pen: QtGui.QPen = pg.mkPen(color, width=1.5, style=QtCore.Qt.DashLine)
+            item: pg.PlotCurveItem = pg.PlotCurveItem(x, y, pen=pen)
+
+            self.items.append(item)
+            candle_plot.addItem(item)
+
+            # Trade Scatter
+            open_bar: BarData = self.ix_bar_map[open_ix]
+            close_bar: BarData = self.ix_bar_map[close_ix]
+
+            if d["direction"] == Direction.LONG:
+                scatter_color: str = "yellow"
+                open_symbol: str = "t1"
+                close_symbol: str = "t"
+                open_side: int = 1
+                close_side: int = -1
+                open_y: float = open_bar.low_price
+                close_y: float = close_bar.high_price
+            else:
+                scatter_color: str = "magenta"
+                open_symbol: str = "t"
+                close_symbol: str = "t1"
+                open_side: int = -1
+                close_side: int = 1
+                open_y: float = open_bar.high_price
+                close_y: float = close_bar.low_price
+
+            pen = pg.mkPen(QtGui.QColor(scatter_color))
+            brush: QtGui.QBrush = pg.mkBrush(QtGui.QColor(scatter_color))
+            size: int = 10
+
+            open_scatter: dict = {
+                "pos": (open_ix, open_y - open_side * y_adjustment),
+                "size": size,
+                "pen": pen,
+                "brush": brush,
+                "symbol": open_symbol
+            }
+
+            close_scatter: dict = {
+                "pos": (close_ix, close_y - close_side * y_adjustment),
+                "size": size,
+                "pen": pen,
+                "brush": brush,
+                "symbol": close_symbol
+            }
+
+            scatter_data.append(open_scatter)
+            scatter_data.append(close_scatter)
+
+            # Trade text
+            volume = d["volume"]
+            text_color: QtGui.QColor = QtGui.QColor(scatter_color)
+            open_text: pg.TextItem = pg.TextItem(f"[{volume}]", color=text_color, anchor=(0.5, 0.5))
+            close_text: pg.TextItem = pg.TextItem(f"[{volume}]", color=text_color, anchor=(0.5, 0.5))
+
+            open_text.setPos(open_ix, open_y - open_side * y_adjustment * 3)
+            close_text.setPos(close_ix, close_y - close_side * y_adjustment * 3)
+
+            self.items.append(open_text)
+            self.items.append(close_text)
+
+            candle_plot.addItem(open_text)
+            candle_plot.addItem(close_text)
+
+        trade_scatter: pg.ScatterPlotItem = pg.ScatterPlotItem(scatter_data)
+        self.items.append(trade_scatter)
+        candle_plot.addItem(trade_scatter)
+

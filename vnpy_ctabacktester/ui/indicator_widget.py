@@ -42,8 +42,8 @@ class IndicatorItemMixin(object):
 
     def get_info_text(self, ix: int) -> str:
         if hasattr(self, "_y"):
-            if hasattr(self, "name"):
-                return "{} {}".format(self.name, self._y[ix])
+            if hasattr(self, "_name"):
+                return "{} {}".format(self._name, self._y[ix])
             else:
                 return str(self._y[ix])
         else:
@@ -70,10 +70,10 @@ class DataWrapper(object):
 
 class CurveItem(pg.PlotCurveItem, IndicatorItemMixin):
 
-    def __init__(self, name: str, data: pd.DataFrame, color, x_column: str, y_column: str):
-        self._x = list(data[x_column])
+    def __init__(self, name: str, data: pd.DataFrame, color, x_column: list, y_column: str):
+        self._x = x_column
         self._y = list(data[y_column])
-        self.name = name
+        self._name = name
         pen: QtGui.QPen = pg.mkPen(color, width=1.5, style=QtCore.Qt.SolidLine)
         super(CurveItem, self).__init__(self._x, self._y, pen=pen)
 
@@ -90,11 +90,11 @@ class IndicatorWidget(ChartWidget):
         self.setWindowTitle("Indicator widget")
 
     def update_indicator(self, data: pd.DataFrame):
-        self._indicator_wrapper.set(DataWrapper)
+        self._indicator_wrapper.set(data)
 
     def add_item(
         self,
-        item_class: Type[ChartItem, IndicatorItemMixin],
+        item_class: type,
         item_name: str,
         plot_name: str,
         **kwargs

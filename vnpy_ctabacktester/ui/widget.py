@@ -219,6 +219,9 @@ class BacktesterManager(QtWidgets.QWidget):
         # Candle Chart
         self.candle_dialog: CandleChartDialog = CandleChartDialog()
 
+        # Indicator Chart
+        self.indicator_dialog: IndicatorChartDialog = IndicatorChartDialog()
+
         # Layout
         middle_vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         middle_vbox.addWidget(self.statistics_monitor)
@@ -390,11 +393,13 @@ class BacktesterManager(QtWidgets.QWidget):
             self.order_button.setEnabled(False)
             self.daily_button.setEnabled(False)
             self.candle_button.setEnabled(False)
+            self.indicator_button.setEnabled(False)
 
             self.trade_dialog.clear_data()
             self.order_dialog.clear_data()
             self.daily_dialog.clear_data()
             self.candle_dialog.clear_data()
+            self.indicator_dialog.clear_data()
 
     def start_optimization(self) -> None:
         """"""
@@ -515,8 +520,18 @@ class BacktesterManager(QtWidgets.QWidget):
         self.candle_dialog.exec_()
 
     def show_indicator_chart(self) -> None:
-        self.backtester_engine.e
-        pass
+        if not self.indicator_dialog.is_updated() and self.backtester_engine.indicator_df is not None:
+            history: list = self.indicator_dialog.update_indicator(
+                self.backtester_engine.indicator_df,
+                self.backtester_engine.indicator_chart
+            )
+
+            self.indicator_dialog.update_history(history)
+
+            trades: List[TradeData] = self.backtester_engine.get_all_trades()
+            self.indicator_dialog.update_trades(trades)
+
+        self.indicator_dialog.exec_()
 
     def edit_strategy_code(self) -> None:
         """"""
@@ -1467,7 +1482,9 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         super(IndicatorChartDialog, self).__init__()
 
         self.updated: bool = False
+
         self.dt_ix_map: dict = {}
+        self.dt_ix_list: list = []
         self.ix_bar_map: dict = {}
 
         self.high_price = 0
@@ -1482,7 +1499,7 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         self.setWindowTitle("指标K线图")
         self.resize(1400, 800)
 
-        self.chart: ChartWidget = IndicatorWidget()
+        self.chart: IndicatorWidget = IndicatorWidget()
         self.chart.add_plot("candle", hide_x_axis=True)
         self.chart.add_plot("volume", hide_x_axis=True, maximum_height=200)
         self.chart.add_plot("indicator", maximum_height=300)
@@ -1490,12 +1507,77 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         self.chart.add_item(VolumeItem, "volume", "volume")
         self.chart.add_cursor()
 
+        # Create help widget
+        text1: str = "红色虚线 —— 盈利交易"
+        label1: QtWidgets.QLabel = QtWidgets.QLabel(text1)
+        label1.setStyleSheet("color:red")
+
+        text2: str = "绿色虚线 —— 亏损交易"
+        label2: QtWidgets.QLabel = QtWidgets.QLabel(text2)
+        label2.setStyleSheet("color:#00FF00")
+
+        text3: str = "黄色向上箭头 —— 买入开仓 Buy"
+        label3: QtWidgets.QLabel = QtWidgets.QLabel(text3)
+        label3.setStyleSheet("color:yellow")
+
+        text4: str = "黄色向下箭头 —— 卖出平仓 Sell"
+        label4: QtWidgets.QLabel = QtWidgets.QLabel(text4)
+        label4.setStyleSheet("color:yellow")
+
+        text5: str = "紫红向下箭头 —— 卖出开仓 Short"
+        label5: QtWidgets.QLabel = QtWidgets.QLabel(text5)
+        label5.setStyleSheet("color:magenta")
+
+        text6: str = "紫红向上箭头 —— 买入平仓 Cover"
+        label6: QtWidgets.QLabel = QtWidgets.QLabel(text6)
+        label6.setStyleSheet("color:magenta")
+
+        hbox1: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        hbox1.addStretch()
+        hbox1.addWidget(label1)
+        hbox1.addStretch()
+        hbox1.addWidget(label2)
+        hbox1.addStretch()
+
+        hbox2: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        hbox2.addStretch()
+        hbox2.addWidget(label3)
+        hbox2.addStretch()
+        hbox2.addWidget(label4)
+        hbox2.addStretch()
+
+        hbox3: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        hbox3.addStretch()
+        hbox3.addWidget(label5)
+        hbox3.addStretch()
+        hbox3.addWidget(label6)
+        hbox3.addStretch()
+
         vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         vbox.addWidget(self.chart)
+        vbox.addLayout(hbox1)
+        vbox.addLayout(hbox2)
+        vbox.addLayout(hbox3)
         self.setLayout(vbox)
 
-    def update_indicator(self) -> None:
-        pass
+    def update_indicator(self, indicator_data: DataFrame, chart_configs: list) -> List[BarData]:
+        self.chart.update_indicator(indicator_data)
+
+        x_column = [i for i in range(indicator_data.shape[0])]
+        for chart in chart_configs:
+            self.chart.add_item(CurveItem, chart[0], "indicator", color=chart[2], x_column=x_column, y_column=chart[1])
+
+        history = []
+        for i in range(len(indicator_data)):
+            d = BarData("backtest", "symbol", Exchange.SHFE, indicator_data.loc[i, "datetime"])
+            d.high_price = indicator_data.loc[i, "high"]
+            d.low_price = indicator_data.loc[i, "low"]
+            d.open_price = indicator_data.loc[i, "open"]
+            d.close_price = indicator_data.loc[i, "close"]
+            d.volume = indicator_data.loc[i, "volume"]
+            d.exchange = Exchange.SHFE
+            history.append(d)
+        return history
 
     def update_history(self, history: list) -> None:
         """"""
@@ -1505,6 +1587,7 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         for ix, bar in enumerate(history):
             self.ix_bar_map[ix] = bar
             self.dt_ix_map[bar.datetime] = ix
+            self.dt_ix_list.append(bar.datetime)
 
             if not self.high_price:
                 self.high_price = bar.high_price
@@ -1514,6 +1597,21 @@ class IndicatorChartDialog(QtWidgets.QDialog):
                 self.low_price = min(self.low_price, bar.low_price)
 
         self.price_range = self.high_price - self.low_price
+
+    def search_ix(self, dt: datetime) -> int:
+        left, right = 0, len(self.dt_ix_list) - 1
+        ix = self.dt_ix_map[self.dt_ix_list[-1]]
+        while left <= right:
+            mid = (left + right) // 2
+            if dt == self.dt_ix_list[mid]:
+                ix = self.dt_ix_map[self.dt_ix_list[mid]]
+                break
+            elif dt < self.dt_ix_list[mid]:
+                ix = self.dt_ix_map[self.dt_ix_list[mid]]
+                right = mid - 1
+            else:
+                left = mid + 1
+        return ix
 
     def update_trades(self, trades: list) -> None:
         """"""
@@ -1526,8 +1624,8 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         y_adjustment: float = self.price_range * 0.001
 
         for d in trade_pairs:
-            open_ix = self.dt_ix_map[d["open_dt"]]
-            close_ix = self.dt_ix_map[d["close_dt"]]
+            open_ix = self.search_ix(d["open_dt"])
+            close_ix = self.search_ix(d["close_dt"])
             open_price = d["open_price"]
             close_price = d["close_price"]
 
@@ -1610,4 +1708,22 @@ class IndicatorChartDialog(QtWidgets.QDialog):
         trade_scatter: pg.ScatterPlotItem = pg.ScatterPlotItem(scatter_data)
         self.items.append(trade_scatter)
         candle_plot.addItem(trade_scatter)
+
+    def clear_data(self) -> None:
+        self.updated = False
+
+        candle_plot: pg.PlotItem = self.chart.get_plot("candle")
+        for item in self.items:
+            candle_plot.removeItem(item)
+        self.items.clear()
+
+        self.chart.clear_all()
+
+        self.dt_ix_map.clear()
+        self.dt_ix_list.clear()
+        self.ix_bar_map.clear()
+
+    def is_updated(self) -> bool:
+        return self.updated
+
 

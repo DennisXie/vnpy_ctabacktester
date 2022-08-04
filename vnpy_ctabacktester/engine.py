@@ -55,6 +55,11 @@ class BacktesterEngine(BaseEngine):
         self.result_df: DataFrame = None
         self.result_statistics: dict = None
 
+        # Backtesting indicator and bar data
+        self.indicator_df: DataFrame = None
+        self.indicator_chart: list = None
+        self.tested_strategy_class = None
+
         # Optimization result
         self.result_values: list = None
 
@@ -198,6 +203,12 @@ class BacktesterEngine(BaseEngine):
 
         self.result_df = engine.calculate_result()
         self.result_statistics = engine.calculate_statistics(output=False)
+
+        if hasattr(engine, "indicator_data"):
+            self.indicator_df = engine.indicator_data
+
+        if hasattr(strategy_class, "indicator_chart"):
+            self.indicator_chart = strategy_class.indicator_chart()
 
         # Clear thread object handler.
         self.thread = None

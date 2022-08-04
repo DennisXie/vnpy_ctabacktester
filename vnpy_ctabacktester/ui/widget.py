@@ -514,9 +514,6 @@ class BacktesterManager(QtWidgets.QWidget):
             trades: List[TradeData] = self.backtester_engine.get_all_trades()
             self.candle_dialog.update_trades(trades)
 
-            # TODO: delete this code
-            self.candle_dialog.update_indicator()
-
         self.candle_dialog.exec_()
 
     def show_indicator_chart(self) -> None:
@@ -1309,16 +1306,6 @@ class CandleChartDialog(QtWidgets.QDialog):
 
         self.price_range = self.high_price - self.low_price
 
-    def update_indicator(self) -> None:
-        import random
-        indicator_plot: pg.PlotItem = self.chart.get_plot("indicator")
-        x = list(self.dt_ix_map.values())
-        x.sort()
-        y = [random.randint(0, 500) for _ in x]
-        pen: QtGui.QPen = pg.mkPen("g", width=1.5, style=QtCore.Qt.SolidLine)
-        item: pg.PlotCurveItem = pg.PlotCurveItem(x, y, pen=pen)
-        indicator_plot.addItem(item)
-
     def update_trades(self, trades: list) -> None:
         """"""
         trade_pairs: list = generate_trade_pairs(trades)
@@ -1497,12 +1484,12 @@ class IndicatorChartDialog(QtWidgets.QDialog):
 
     def init_ui(self) -> None:
         self.setWindowTitle("指标K线图")
-        self.resize(1400, 800)
+        self.resize(1400, 1100)
 
         self.chart: IndicatorWidget = IndicatorWidget()
         self.chart.add_plot("candle", hide_x_axis=True)
         self.chart.add_plot("volume", hide_x_axis=True, maximum_height=200)
-        self.chart.add_plot("indicator", maximum_height=300)
+        self.chart.add_plot("indicator")
         self.chart.add_item(CandleItem, "candle", "candle")
         self.chart.add_item(VolumeItem, "volume", "volume")
         self.chart.add_cursor()

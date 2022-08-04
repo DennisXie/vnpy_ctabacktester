@@ -77,6 +77,16 @@ class CurveItem(pg.PlotCurveItem, IndicatorItemMixin):
         pen: QtGui.QPen = pg.mkPen(color, width=1.5, style=QtCore.Qt.SolidLine)
         super(CurveItem, self).__init__(self._x, self._y, pen=pen)
 
+# y = [1, 2, 4, 3, 1, -3, -5, -2, 1, 2]
+# x1 = [i for i in range(len(y)) if y[i] >= 0]
+# x2 = [i for i in range(len(y)) if y[i] < 0]
+# y1 = [d for d in y if d >=0]
+# y2 = [d for d in y if d < 0]
+# bg1 = pg.BarGraphItem(x=x1, height=y1, width=0.05, brush="g")
+# bg2 = pg.BarGraphItem(x=x2, height=y2, width=0.05, brush="r")
+# win.addItem(bg1)
+# win.addItem(bg2)
+
 
 class IndicatorWidget(ChartWidget):
 
@@ -111,3 +121,43 @@ class IndicatorWidget(ChartWidget):
             self._item_plot_map[item] = plot
         else:
             pass
+
+    def _update_plot_limits(self) -> None:
+        range_map = dict()
+        for item, plot in self._item_plot_map.items():
+            min_value, max_value = item.get_y_range()
+            if plot not in range_map:
+                range_map[plot] = (min_value, max_value)
+            else:
+                buf = range_map[plot]
+                range_map[plot] = (min(buf[0], min_value), max(buf[1], max_value))
+            plot.setLimits(
+                xMin=-1,
+                xMax=self._manager.get_count(),
+                yMin=range_map[plot][0],
+                yMax=range_map[plot][1]
+            )
+
+    def _update_y_range(self) -> None:
+        """
+        Update the y-axis range of plots.
+        """
+        view: pg.ViewBox = self._first_plot.getViewBox()
+        view_range: list = view.viewRange()
+
+        min_ix: int = max(0, int(view_range[0][0]))
+        max_ix: int = min(self._manager.get_count(), int(view_range[0][1]))
+
+        # Update limit for y-axis
+        range_map = dict()
+        for item, plot in self._item_plot_map.items():
+            y_range: tuple = item.get_y_range(min_ix, max_ix)
+            left = y_range[0] * 1.1 if y_range[0] < 0 else y_range[0] * 0.9
+            right = y_range[1] * 1.1 if y_range[1] > 0 else y_range[1] * 0.9
+            if plot not in range_map:
+                range_map[plot] = (left, right)
+            else:
+                buf = range_map[plot]
+                range_map[plot] = (min(buf[0], left), max(buf[1], right))
+
+            plot.setRange(yRange=range_map[plot])

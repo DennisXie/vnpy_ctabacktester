@@ -43,6 +43,8 @@ class IndicatorItemMixin(object):
     def get_info_text(self, ix: int) -> str:
         if hasattr(self, "_y"):
             if hasattr(self, "_name"):
+                if ix >= len(self._y):
+                    ix = -1
                 return "{} {}".format(self._name, self._y[ix])
             else:
                 return str(self._y[ix])
@@ -54,6 +56,12 @@ class IndicatorItemMixin(object):
 
     def update_bar(self, *args, **kwargs):
         pass
+
+    def clear_all(self):
+        pass
+
+    def get_name(self):
+        return self._name
 
 
 class DataWrapper(object):
@@ -70,12 +78,29 @@ class DataWrapper(object):
 
 class CurveItem(pg.PlotCurveItem, IndicatorItemMixin):
 
-    def __init__(self, name: str, data: pd.DataFrame, color, x_column: list, y_column: str):
+    def __init__(self, name: str, color, x_column: list, y_column: list):
         self._x = x_column
-        self._y = list(data[y_column])
+        self._y = y_column
         self._name = name
         pen: QtGui.QPen = pg.mkPen(color, width=1.5, style=QtCore.Qt.SolidLine)
         super(CurveItem, self).__init__(self._x, self._y, pen=pen)
+
+
+class BarItem(pg.BarGraphItem, IndicatorItemMixin):
+
+    def __init__(self, name: str, color: tuple, x_column: list, y_column: list):
+        self._x = x_column
+        self._y = y_column
+        self._name = name
+        if isinstance(color, tuple):
+            self._colors = [color[0] if y >= 0 else color[1] for y in y_column]
+            self._pens = [color[0] if y >= 0 else color[1] for y in y_column]
+            super().__init__(x=self._x, height=self._y, width=0.05, brushes=self._colors, pens=self._pens)
+        else:
+            self._color = color
+            self._pen = color
+            super().__init__(x=self._x, height=self._y, width=0.05, brush=color, pen=color)
+
 
 # y = [1, 2, 4, 3, 1, -3, -5, -2, 1, 2]
 # x1 = [i for i in range(len(y)) if y[i] >= 0]
@@ -112,7 +137,7 @@ class IndicatorWidget(ChartWidget):
         if issubclass(item_class, ChartItem):
             super(IndicatorWidget, self).add_item(item_class, item_name, plot_name)
         elif issubclass(item_class, IndicatorItemMixin):
-            item: IndicatorItemMixin = item_class(item_name, self._indicator_wrapper.get(), **kwargs)
+            item: IndicatorItemMixin = item_class(item_name, **kwargs)
             self._items[item_name] = item
 
             plot: pg.PlotItem = self._plots.get(plot_name)
@@ -161,3 +186,14 @@ class IndicatorWidget(ChartWidget):
                 range_map[plot] = (min(buf[0], left), max(buf[1], right))
 
             plot.setRange(yRange=range_map[plot])
+
+    def clear_all(self) -> None:
+        removed_items = []
+        for item, plot in self._item_plot_map.items():
+            if isinstance(item, IndicatorItemMixin):
+                plot.removeItem(item)
+                removed_items.append(item)
+        for item in removed_items:
+            self._item_plot_map.pop(item)
+            self._items.pop(item.get_name())
+        super(IndicatorWidget, self).clear_all()

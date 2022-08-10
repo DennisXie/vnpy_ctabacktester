@@ -19,7 +19,7 @@ from vnpy.trader.object import BarData, TradeData, OrderData
 from vnpy.trader.database import DB_TZ
 from vnpy_ctastrategy.backtesting import DailyResult
 
-from .indicator_widget import IndicatorWidget, CurveItem
+from .indicator_widget import IndicatorWidget, CurveItem, BarItem
 
 from ..engine import (
     APP_NAME,
@@ -1228,10 +1228,8 @@ class CandleChartDialog(QtWidgets.QDialog):
         self.chart: ChartWidget = ChartWidget()
         self.chart.add_plot("candle", hide_x_axis=True)
         self.chart.add_plot("volume", maximum_height=200)
-        self.chart.add_plot("indicator")
         self.chart.add_item(CandleItem, "candle", "candle")
         self.chart.add_item(VolumeItem, "volume", "volume")
-        self.chart.add_item(VolumeItem, "indicator", "indicator")
         self.chart.add_cursor()
 
         # Create help widget
@@ -1550,9 +1548,15 @@ class IndicatorChartDialog(QtWidgets.QDialog):
     def update_indicator(self, indicator_data: DataFrame, chart_configs: list) -> List[BarData]:
         self.chart.update_indicator(indicator_data)
 
-        x_column = [i for i in range(indicator_data.shape[0])]
         for chart in chart_configs:
-            self.chart.add_item(CurveItem, chart[0], "indicator", color=chart[2], x_column=x_column, y_column=chart[1])
+            x_column = [i for i in range(indicator_data.shape[0])]
+            y_column = list(indicator_data[chart[2]])
+            if chart[0] == "curve":
+                self.chart.add_item(CurveItem, chart[1], "indicator", color=chart[3], x_column=x_column, y_column=y_column)
+            elif chart[0] == "bar":
+                self.chart.add_item(BarItem, chart[1], "indicator", color=chart[3], x_column=x_column, y_column=y_column)
+            else:
+                pass
 
         history = []
         for i in range(len(indicator_data)):
